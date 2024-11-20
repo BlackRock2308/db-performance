@@ -1,8 +1,8 @@
 import pytest
 from src.dbperf.utils.spark_session import spark
 
-from src.dbperf.traitements.transformations.data_processor import process_data
-
+from src.dbperf.traitements.transformations.data_processor import process_data_test, process_data_BanquePrincipaleEmp__c
+import src.dbperf.traitements.constants as C
 
 def test_data_processor():
     # Create test data
@@ -12,10 +12,19 @@ def test_data_processor():
         {"value": 0}
     ]
 
+    demande_pret_iommo_df = (
+        spark.read.options(header="True", sep=",")
+        .csv(C.BASE_DIR + "/data/demande_pret_immo.csv")
+        .drop("index")
+    )
+
     df = spark.createDataFrame(test_data)
 
-    # Process data
-    processed_df = process_data(df)
+    # Process data test
+    processed_df = process_data_test(df)
+
+    # Process csv data
+    process_data_BanquePrincipaleEmp__c(demande_pret_iommo_df)
 
     # Collect results
     results = processed_df.collect()

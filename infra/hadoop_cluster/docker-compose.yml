@@ -6,6 +6,7 @@ services:
     volumes:
       - hadoop_namenode:/hadoop/dfs/name
       - spark_events:/tmp/spark-events
+      - /Users/macbookpro/Documents/db-perf-project:/project # Mount project directory
     environment:
       - CLUSTER_NAME=test
     env_file:
@@ -17,6 +18,8 @@ services:
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     container_name: datanode
+    depends_on:
+      - namenode
     volumes:
       - hadoop_datanode:/hadoop/dfs/data
       - spark_events:/tmp/spark-events
@@ -28,12 +31,20 @@ services:
   spark-master:
     image: bde2020/spark-master:3.1.2-hadoop3.2
     container_name: spark-master
+    depends_on:
+      - namenode
     ports:
       - 8080:8080
       - 7077:7077
+      - 4040:4040  # Add this line to expose Spark application UI
     environment:
       - INIT_DAEMON_STEP=setup_spark
-      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/tmp/spark-events
+      - SPARK_MASTER_HOST=0.0.0.0
+      - SPARK_LOCAL_DIRS=/tmp
+      - SPARK_CONF_DIR=/spark/conf
+      - SPARK_WORKER_DIR=/tmp/spark-events
+      - SPARK_MASTER_OPTS=-Dspark.deploy.recoveryMode=FILESYSTEM
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=hdfs://namenode:8020/tmp/spark-events
     env_file:
       - ./hadoop-hive.env
     volumes:
@@ -60,9 +71,9 @@ services:
     depends_on:
       - spark-master
     ports:
-      - 18080:18080
+      - 18080:18081
     environment:
-      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/tmp/spark-events
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=hdfs://namenode:8020/tmp/spark-events
     volumes:
       - spark_events:/tmp/spark-events
 
@@ -80,6 +91,8 @@ services:
   hive-metastore:
     image: bde2020/hive:2.3.2-postgresql-metastore
     container_name: hive-metastore
+    depends_on:
+      - postgresql
     env_file:
       - ./hadoop-hive.env
 
