@@ -1,10 +1,11 @@
-version: "3"
-
+version: '3'
 services:
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
     volumes:
-      - namenode:/hadoop/dfs/name
+      - hadoop_namenode:/hadoop/dfs/name
+      - spark_events:/tmp/spark-events
     environment:
       - CLUSTER_NAME=test
     env_file:
@@ -15,114 +16,104 @@ services:
 
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
     volumes:
-      - datanode:/hadoop/dfs/data
-    env_file:
-      - ./hadoop-hive.env
-    environment:
-      SERVICE_PRECONDITION: "namenode:9870"
-    ports:
-      - "9864:9864"
-
-  resourcemanager:
-    restart: on-failure
-    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.1.3-java8
-    environment:
-      SERVICE_PRECONDITION: "namenode:9870 datanode:9864"
+      - hadoop_datanode:/hadoop/dfs/data
+      - spark_events:/tmp/spark-events
     env_file:
       - ./hadoop-hive.env
     ports:
-      - "8088:8088"  # Added this port for YARN Web UI
+      - 9864:9864
 
   spark-master:
-    image: bde2020/spark-master:3.1.1-hadoop3.2
+    image: bde2020/spark-master:3.1.2-hadoop3.2
+    container_name: spark-master
     ports:
-      - "8080:8080"  # Spark Master Web UI
-      - "7077:7077"  # Spark Master port
+      - 8080:8080
+      - 7077:7077
     environment:
       - INIT_DAEMON_STEP=setup_spark
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/tmp/spark-events
     env_file:
       - ./hadoop-hive.env
-    depends_on:
-      - namenode
-      - datanode
-      - resourcemanager
+    volumes:
+      - spark_events:/tmp/spark-events
 
   spark-worker:
-    image: bde2020/spark-worker:3.1.1-hadoop3.2
+    image: bde2020/spark-worker:3.1.2-hadoop3.2
+    container_name: spark-worker
     depends_on:
       - spark-master
     ports:
-      - "8081:8081"  # Spark Worker Web UI
+      - 8081:8081
     environment:
       - SPARK_MASTER=spark://spark-master:7077
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      - SPARK_WORKER_OPTS=-Dspark.worker.dir=/tmp/spark-events
     env_file:
       - ./hadoop-hive.env
+    volumes:
+      - spark_events:/tmp/spark-events
 
   spark-history-server:
-    image: bde2020/spark-history-server:3.1.1-hadoop3.2
+    image: bde2020/spark-history-server:3.1.2-hadoop3.2
+    container_name: spark-history-server
     depends_on:
       - spark-master
     ports:
-      - "18080:18080"  # Spark History Server Web UI
+      - 18080:18080
     environment:
-      - SPARK_HISTORY_SERVER_HOST=spark-history-server
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
-    env_file:
-      - ./hadoop-hive.env
-
-  # ... rest of your existing services (hive-server, hive-metastore, etc.) ...
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/tmp/spark-events
+    volumes:
+      - spark_events:/tmp/spark-events
 
   hive-server:
     image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-server
     env_file:
       - ./hadoop-hive.env
-    environment:
-      HIVE_CORE_CONF_javax_jdo_option_ConnectionURL: "jdbc:postgresql://hive-metastore/metastore"
-      SERVICE_PRECONDITION: "hive-metastore:9083"
     ports:
-      - "10000:10000"
+      - 10000:10000
+      - 10002:10002
+    volumes:
+      - spark_events:/tmp/spark-events
 
   hive-metastore:
     image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-metastore
     env_file:
       - ./hadoop-hive.env
-    command: /opt/hive/bin/hive --service metastore
+
+  postgresql:
+    image: postgres:12
+    container_name: postgresql
     environment:
-      SERVICE_PRECONDITION: "namenode:9870 datanode:9864 hive-metastore-postgresql:5432 resourcemanager:8088"
-    ports:
-      - "9083:9083"
-
-  hive-metastore-postgresql:
-    image: bde2020/hive-metastore-postgresql:2.3.0
-    ports:
-      - "5432:5432"
-
-  huedb:
-    image: postgres:12.1-alpine
+      - POSTGRES_DB=metastore
+      - POSTGRES_USER=hive
+      - POSTGRES_PASSWORD=hive
     volumes:
-      - pg_data:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
-    env_file:
-      - ./hadoop-hive.env
-    environment:
-      SERVICE_PRECONDITION: "namenode:9870 datanode:9864 hive-metastore-postgresql:5432 resourcemanager:8088 hive-metastore:9083"
+      - 5432:5432
 
   hue:
-    image: gethue/hue:20240212-140101
-    environment:
-      SERVICE_PRECONDITION: "namenode:9870 datanode:9864 hive-metastore-postgresql:5432 resourcemanager:8088 hive-metastore:9083 huedb:5433"
+    image: gethue/hue:latest
+    container_name: hue
     ports:
-      - "8089:8088"  # Changed to 8089 to avoid conflict with resourcemanager
+      - 8888:8888
     volumes:
-      - ./hue-overrides.ini:/usr/share/hue/desktop/conf/z-hue.ini
-    links:
-      - huedb
+      - ./hue-overrides.ini:/usr/share/hue/desktop/conf/hue.ini
+    depends_on:
+      - postgresql
+    environment:
+      - DATABASE_HOST=postgresql
+      - DATABASE_PORT=5432
+      - DATABASE_TYPE=postgresql
+      - DATABASE_NAME=metastore
+      - DATABASE_USER=hive
+      - DATABASE_PASSWORD=hive
 
 volumes:
-  namenode:
-  datanode:
-  pg_data:
+  hadoop_namenode:
+  hadoop_datanode:
+  postgres_data:
+  spark_events:
