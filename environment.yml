@@ -1,0 +1,15 @@
+name: dbperf_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.8  # Mise à jour vers Python 3.8 (plus récent et supporté par toutes les bibliothèques modernes)
+  - pyspark=3.1.2  # Mise à jour vers la version plus récente compatible avec Hadoop 3.1.2 et avec une meilleure performance
+  - pytest=7.2.2  # Mise à jour vers la dernière version stable de pytest
+  - pytest-cov=3.0.0  # Mise à jour de pytest-cov vers la dernière version
+  - jsonschema=4.17.3  # Mise à jour vers la dernière version stable de jsonschema
+  - psycopg2=2.9.6  # Mise à jour vers une version plus récente de psycopg2 compatible avec Python 3.8
+  - great-expectations=0.15.0  # Mise à jour vers la version stable la plus récente de Great Expectations
+  - dataclasses=0.8  # Cette version de dataclasses est compatible avec Python 3.8, donc reste inchangée
+  - pip
+  - pip:
+    - findspark  # Helpful for local Spark configurationls
